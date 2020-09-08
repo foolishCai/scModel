@@ -258,8 +258,7 @@ def get_pr_curve(y_true, y_pred, file_name=None):
 # 区间正负占比
 def get_score_bar(y_true, y_pred, file_name=None):
     plt.figure(figsize=(12, 6))
-    rs = pd.DataFrame(columns=['flag', 'pred'], data={"flag": list(y_true), "pred": list(y_pred)})
-    rs["pred"] = rs.pred.map(lambda x: round(x, 3))
+    rs = pd.DataFrame(columns=['flag', 'pred'], data={"flag": list(y_true), "pred": [round(i,3) for i in list(y_pred)]})
     rs["pred_bin"] = pd.cut(rs["pred"].tolist(), 20, include_lowest=True)
     rs = pd.crosstab(rs.pred_bin, rs.flag, rownames=['pred_bin'], colnames=['flag']).reset_index()
     rs.columns = ["pred_bin", "good", "bad"]
