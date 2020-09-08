@@ -19,35 +19,26 @@ class LogUtil(object):
         if log_name is None:
             log_name = log_config['log_name']
         self.logger = logging.getLogger(log_name)
-        self.logger.setLevel(logging.INFO)
-        # 定义输出格式
-        formatter = logging.Formatter('%(asctime)s %(filename)s [line:%(lineno)d] %(levelname)s %(message)s')
+        if not self.logger.handlers:
+            self.logger.setLevel(logging.INFO)
+            # 定义输出格式
+            formatter = logging.Formatter('%(asctime)s %(filename)s [line:%(lineno)d] %(levelname)s %(message)s')
 
-        # 创建一个文件的handler
-        fh = logging.FileHandler(log_config['log_path'] + os.sep + log_name + '.log')
-        fh.setFormatter(fmt=formatter)
-        self.logger.addHandler(fh)
+            # 创建一个文件的handler
+            fh = logging.FileHandler(log_config['log_path'] + os.sep + log_name + '.log')
+            fh.setFormatter(fmt=formatter)
+            self.logger.addHandler(fh)
 
-        # 创建一个控制台输出的handler
-        ch = logging.StreamHandler()
-        ch.setFormatter(fmt=formatter)
-        self.logger.addHandler(ch)
+            # 创建一个控制台输出的handler
+            ch = logging.StreamHandler()
+            ch.setFormatter(fmt=formatter)
+            self.logger.addHandler(ch)
 
     def info(self, msg):
-        msg = str(msg)
-        self.logger.info(msg)
+        self.logger.info(str(msg))
 
     def debug(self, msg):
-        msg = str(msg)
-        self.logger.debug(msg)
+        self.logger.debug(str(msg))
 
     def error(self, msg):
-        msg = str(msg)
-        self.logger.error("!!!ERROR!!!", msg)
-
-
-if __name__ == '__main__':
-
-    t = LogUtil()
-    t.info('hello 1')
-    t.info('hello 2')
+        self.logger.error("!!!ERROR!!!", str(msg))

@@ -12,8 +12,7 @@ sys.path.append("..")
 import pandas as pd
 import numpy as np
 import operator
-from statsmodels.stats.outliers_influence import variance_inflation_factor
-from scipy.stats import ks_2samp
+from prettytable import PrettyTable
 
 from Configs import log_config
 from Utils.LogUtil import LogUtil
@@ -25,25 +24,43 @@ class EdaUtil(object):
     def __init__(self, file_name,  df, target_name="y", del_col=[], dist_col=[], serial_col=[], time_col="create_date",
                  time_level="m", max_col_null_pct=0.8, max_row_null_pct=0.8,
                  max_null_pct_delta=0.3, max_various_values=100):
-        self.df = df.copy()
-        self.df.rename(columns={target_name: "y"}, inplace=True)
+        '''
+        :param file_name: 确定日志文件名，以及需要保存的
+        :param df: str;label列的名字
+        :param target_name: list; 不是离散变量且不是连续变量，e.g. y/i/time
+        :param del_col: list; 不是离散变量且不是连续变量，e.g. y/i/time
+        :param dist_col: list; 连续变量
+        :param serial_col: list; 连续变量
+        :param time_col: str;时间列名称
+        :param time_level: charater;需要观察的时间维度（y-年度；m-月度；d-天）
+        :param max_col_null_pct: float; 特征覆盖率阈值
+        :param max_row_null_pct: float; 样本浓度阈值
+        :param max_null_pct_delta: float; abs(特征在y1样本集中的覆盖率-特征在y0样本集中的覆盖率)
+        :param max_various_values: int; 离散遍变量的unique value值个数
+        '''
 
-        self.del_col = del_col
-        if not dist_col:
-            self.get_object_cols()
-        else:
-            self.dist_col = dist_col
-
-        if not serial_col:
-            self.serial_col = [i for i in self.df.columns if i not in self.del_col and i not in self.dist_col]
-            for col in self.serial_col:
-                self.df[col] = self.df[col].astype(float)
-        else:
-            self.serial_col = serial_col
         if file_name:
             self.log = LogUtil(file_name)
         else:
             self.log = LogUtil("EDA_" + datetime.datetime.today().strftime("%Y%m%d"))
+
+        self.df = df.copy()
+        self.df.rename(columns={target_name: "y"}, inplace=True)
+
+        self.del_col = del_col[:]
+        if not dist_col:
+            self.get_object_cols()
+        else:
+            self.dist_col = dist_col[:]
+
+        if not serial_col:
+            self.serial_col = [i for i in self.df.columns if i not in self.del_col and i not in self.dist_col]
+        else:
+            self.serial_col = serial_col[:]
+
+        tmp_serical = pd.DataFrame(self.df[self.serial_col], dtype=float)
+        self.df = pd.concat([self.df[self.del_col + self.dist_col], tmp_serical], axis=1)
+
         self.max_col_null_pct = max_col_null_pct
         self.max_row_null_pct = max_row_null_pct
         self.max_null_pct_delta = max_null_pct_delta
@@ -51,6 +68,7 @@ class EdaUtil(object):
             self.max_various_values = max_various_values
         else:
             self.max_various_values = int(self.df.shape[0] / 10)
+
         if time_col and time_level:
             from Utils.time_tools import get_std_time
             try:
@@ -85,6 +103,7 @@ class EdaUtil(object):
 
     ## 检查Y值
     def check_y(self):
+        self.df["y"] = self.df.y.astype(float).astype(int)
         data = self.df.copy()
         if len(data.y.unique()) > 2 :
             self.log.info("哇哦！活见鬼的多分类！\n本函数不适合你，拜拜！")
@@ -141,7 +160,7 @@ class EdaUtil(object):
         null_pct_by_by_label.sort_values(by=['delta'], ascending=False)
         self.log.info("有{}个特征在好坏样本上缺失值(高于{})差异明显".format(len(null_pct_by_by_label), self.max_null_pct_delta))
         if len(null_pct_by_by_label)>0:
-            self.log.info(("不同label下的缺失值情况如下\n:{}".format((null_pct_by_by_label))))
+            self.log.info("不同label下的缺失值情况如下\n:{}".format(self.format_dataframe(null_pct_by_by_label)))
         self.log.info("*"*50)
         del data
         del null_pct_by_by_label
@@ -157,12 +176,12 @@ class EdaUtil(object):
                 continue
             else:
                 try:
-                    self.df[col] = self.df[col].astype(np.float)
-                except:
+                    self.df[col].astype(np.float)
                     unreal_objects_col.append(col)
+                except:
                     self.dist_col.append(col)
         if len(unreal_objects_col):
-            self.log.info("这些离散变量可以处理:{}".format(unreal_objects_col))
+            self.log.info("这些离散变量可以处理为连续值:{}".format(unreal_objects_col))
         self.log.info("处理以后剩下的离散变量共{}个，分别是：{}".format(len(self.dist_col), self.dist_col))
         self.log.info("*" * 50)
         del data
@@ -231,33 +250,13 @@ class EdaUtil(object):
         result = pd.DataFrame(result, columns=['dtype', 'data_cnt', 'null_cnt', 'null_ratio'])
         result = result[result.null_ratio > self.max_col_null_pct]
         result = result.sort_values(by=['null_ratio'], ascending=False)
-        self.log.info("每列缺失值情况如下:\n{}".format((result)))
+        self.log.info("每列缺失值情况如下:\n{}".format((self.format_dataframe(result))))
         self.log.info("*"*50)
         del data
         del result
         del cols_null_percent
         del rows_null_percent
 
-
-    def input_objects(self):
-        self.log.info("*" * 50)
-        self.log.info("本次EDA传入相关参数，作如下说明")
-        self.log.info("本次运行日志存放位置：{}".format(log_config["log_path"]))
-        self.log.info("本次无需分析的列：{}".format(self.del_col))
-        self.log.info("本次分析列最大缺失率：{}".format(self.max_col_null_pct))
-        self.log.info("本次分析行最大缺失率：{}".format(self.max_row_null_pct))
-        self.log.info("本次分析不同lable下特征缺失率最大差异值：{}".format(self.max_null_pct_delta))
-        self.log.info("每个离散特征的枚举值的最大个数：{}".format(self.max_various_values))
-        if self.time_level and self.time_col:
-            if self.time_level == "m":
-                self.log.info("本次分析的时间单位：以月统计")
-            elif self.time_level == "y":
-                self.log.info("本次分析的时间单位：以年统计")
-            else:
-                self.log.info("本次分析的时间单位：以天统计")
-
-        self.log.info("温馨提醒，各相关参数一旦确认，无法更改；另，祝忧桑的建模过程愉快～")
-        self.log.info("*" * 50)
 
     ## output show
     def output_objects(self):
@@ -268,3 +267,10 @@ class EdaUtil(object):
         self.log.info("分布无明显变化的特征: {}.q5equalq95_col".format(self.__class__.__name__))
         self.log.info("缺失率过高的特征: {}.to_drop_cols".format(self.__class__.__name__))
         self.log.info("缺失率过高的行: {}.to_drop_rows".format(self.__class__.__name__))
+
+    @ staticmethod
+    def format_dataframe(df):
+        data = PrettyTable([''] + list(df.columns))
+        for row in df.itertuples():
+            data.add_row(row)
+        return data

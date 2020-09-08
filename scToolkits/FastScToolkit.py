@@ -14,29 +14,38 @@ import pandas as pd
 import numpy as np
 import datetime
 
-from Utils import log
+from Utils.LogUtil import LogUtil
 import scorecardpy as sc
 from statsmodels.stats.outliers_influence import variance_inflation_factor
 from sklearn.utils.class_weight import compute_class_weight
 from sklearn.linear_model import LogisticRegression
 
 class FastScWoe(object):
-    def __init__(self, df_train, target_name, dist_col, serial_col, df_test=None, df_ott=None, file_name=None,
+    def __init__(self, df_train, target_name, dist_col, serial_col, df_test=None, df_ott=None, filename=None,
                  max_bins=5, method="tree", max_corr=0.75, max_vif=10, cut_nums=50, base_score=500, double_score=20):
-        self.log = log
+        '''
+        :param df_train:  训练集
+        :param target_name:  y
+        :param dist_col: 离散变量
+        :param serial_col: 连续变量
+        :param df_test: 测试集
+        :param df_ott: 验证集
+        :param filename: 文件名，用来保存后续需要的数据文件
+        :param max_bins: 最大分箱数
+        :param method: tree 或 chimerge
+        :param max_corr: 两两相关系数阈值
+        :param max_vif:  vif最大值
+        :param cut_nums: 结果评估需要划分层的段数
+        :param base_score: 基础分
+        :param double_score: 翻倍的分数
+        '''
 
-        """
-        df_train:       训练集
-        target_name:    y
-        del_col:        不需要分箱的列
-        dist_col:       离散变量
-        serial_col:     连续变量
-        df_test:        测试集
-        df_ott:         跨时间验证的数据集
-        file_name:      文件名字
-        max_bins:       最大分箱数
-        method:         分箱方法，tree或者chimerge
-        """
+        if filename:
+            self.filename = filename
+        else:
+            self.filename = "scModel" + datetime.datetime.today().strftime("%Y%m%d")
+
+        self.log = LogUtil(self.filename)
 
         # 检查y列
         if not target_name:
@@ -83,11 +92,6 @@ class FastScWoe(object):
             self.df_ott = pd.DataFrame()
             self.log.info("好棒！没有跨时间验证窗口的数据～")
 
-        if file_name:
-            self.filename = file_name
-        else:
-            self.filename = "model" + datetime.datetime.today().strftime("%Y%m%d")
-
         self.max_bins = max_bins
         self.method = method
 
@@ -106,14 +110,8 @@ class FastScWoe(object):
     def _format_df(self, df):
         df = pd.DataFrame(df, dtype=str)
         df[self.target_name] = df[self.target_name].apply(int)
-        for col in df.columns:
-            if col in self.dist_col:
-                try:
-                    df[col] = pd.to_numeric(df[col])
-                except:
-                    pass
-            elif col in self.serial_col:
-                df[col] = df[col].astype(float)
+        tmp_serical = pd.DataFrame(df[self.serial_col], dtype=float)
+        df = pd.concat([df[[self.target_name] + self.dist_col], tmp_serical], axis=1)
         return df
 
     def cut_main(self):
