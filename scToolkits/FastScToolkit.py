@@ -110,8 +110,11 @@ class FastScWoe(object):
     def _format_df(self, df):
         df = pd.DataFrame(df, dtype=str)
         df[self.target_name] = df[self.target_name].apply(int)
-        tmp_serical = pd.DataFrame(df[self.serial_col], dtype=float)
-        df = pd.concat([df[[self.target_name] + self.dist_col], tmp_serical], axis=1)
+        if len(self.serial_col) >0:
+            tmp_serical = pd.DataFrame(df[self.serial_col], dtype=float)
+            df = pd.concat([df[[self.target_name] + self.dist_col], tmp_serical], axis=1)
+        else:
+            df = df[[self.target_name] + self.dist_col]
         return df
 
     def cut_main(self):
@@ -242,8 +245,8 @@ class FastScWoe(object):
         rs["pred_min"] = rs.pred_bin.map(lambda x: float(str(x).replace("(", "").replace("]", "").split(",")[0]))
         rs["pred_max"] = rs.pred_bin.map(lambda x: float(str(x).replace("(", "").replace("]", "").split(",")[1]))
 
-        rs["score_max"] = rs.pred_min.map(lambda x: a - b * np.log(x / (1 - x)))
-        rs["score_min"] = rs.pred_max.map(lambda x: a - b * np.log(x / (1 - x)))
+        rs["score_max"] = rs.pred_min.map(lambda x: a - b * np.log(x / (1 - x)) if x>0 else float("-inf"))
+        rs["score_min"] = rs.pred_max.map(lambda x: a - b * np.log(x / (1 - x)) if (1-x)>0 else float("inf"))
 
         rs["score_bin"] = rs.apply(lambda x: "(" + str(round(x.score_max, 2)) + "," + str(round(x.score_min, 2)) + "]",
                                    axis=1)
@@ -287,7 +290,7 @@ class FastScWoe(object):
         self._check_corr()
         self._check_vif()
 
-        class_weights = compute_class_weight('balanced', [0, 1], self.df_train_woe.y)
+        class_weights = compute_class_weight('balanced', [0, 1], self.df_train_woe[self.target_name])
         self._check_stepwise(class_weights)
 
         X_train = self.df_train_woe[self.final_features]

@@ -27,7 +27,7 @@ class EdaUtil(object):
         '''
         :param file_name: 确定日志文件名，以及需要保存的
         :param df: str;label列的名字
-        :param target_name: list; 不是离散变量且不是连续变量，e.g. y/i/time
+        :param target_name: list; 不是离散变量且不是连续变量，e.g. y
         :param del_col: list; 不是离散变量且不是连续变量，e.g. y/i/time
         :param dist_col: list; 连续变量
         :param serial_col: list; 连续变量
@@ -44,9 +44,6 @@ class EdaUtil(object):
         else:
             self.log = LogUtil("EDA_" + datetime.datetime.today().strftime("%Y%m%d"))
 
-        self.df = df.copy()
-        self.df.rename(columns={target_name: "y"}, inplace=True)
-
         self.del_col = del_col[:]
         if not dist_col:
             self.get_object_cols()
@@ -54,12 +51,16 @@ class EdaUtil(object):
             self.dist_col = dist_col[:]
 
         if not serial_col:
-            self.serial_col = [i for i in self.df.columns if i not in self.del_col and i not in self.dist_col]
+            self.serial_col = [i for i in df.columns if i not in del_col and i not in dist_col if i != target_name]
         else:
             self.serial_col = serial_col[:]
 
-        tmp_serical = pd.DataFrame(self.df[self.serial_col], dtype=float)
-        self.df = pd.concat([self.df[self.del_col + self.dist_col], tmp_serical], axis=1)
+        if len(self.serial_col)>0:
+            tmp_serical = pd.DataFrame(df[self.serial_col], dtype=float)
+            self.df = pd.concat([df[list(set(self.dist_col + [target_name]))], tmp_serical], axis=1)
+        else:
+            self.df = df[list(set(self.dist_col + [target_name]))]
+        self.df.rename(columns={target_name: "y"}, inplace=True)
 
         self.max_col_null_pct = max_col_null_pct
         self.max_row_null_pct = max_row_null_pct
@@ -151,6 +152,7 @@ class EdaUtil(object):
         null_pct_by_by_label = data.drop('y', axis=1).groupby(data['y']).apply(
             lambda x: (x.isna().sum()) / (x.shape[0])).T.drop_duplicates(0.0).sort_values(0.0)
         null_pct_by_by_label.columns = ['label_0', 'label_1']
+
         self.log.info("不同label下样本整体缺失情况如下:")
         from scToolkits.drawToolkit import get_null_pct_by_label
         get_null_pct_by_label(null_pct_by_by_label)
@@ -194,7 +196,6 @@ class EdaUtil(object):
         self.q5equalq95_col = []
         for col in data.columns:
             tmp_ = data[~data[col].isnull()][col]
-
             if col in self.del_col:
                 continue
             elif col in self.dist_col:
@@ -202,6 +203,8 @@ class EdaUtil(object):
                     self.various_cols.append(col)
                 elif len(tmp_.unique()) > self.max_various_values:
                     self.various_cols.append(col)
+                elif len(tmp_.unique()) == 1:
+                    self.single_cols.append(col)
             elif col in self.serial_col:
                 quantile00, quantile99 = tmp_.quantile([.5, .95])
                 if quantile00 == quantile99:
@@ -226,34 +229,41 @@ class EdaUtil(object):
         # 对行的探索
         rows_null_percent = data.isnull().sum(axis=1) / data.shape[1]
         to_drop_rows = rows_null_percent[rows_null_percent > self.max_row_null_pct]
-        to_drop_rows = to_drop_rows.to_dict()
-        self.to_drop_rows = sorted(to_drop_rows.items(), key=operator.itemgetter(1), reverse=True)
-        self.log.info("缺失值比例>{}的有{}行".format(self.max_row_null_pct, len(to_drop_rows)))
-        data = data[data.index.isin(list(to_drop_rows.keys()))]
-        self.log.info("全局label1的占比为:{}".format(round(self.df.y.value_counts()[1]/len(self.df),4)))
-        self.log.info("特征饱和度低于{}的样本label1的占比为:{}".format(self.max_row_null_pct, round(data.y.value_counts()[1] / len(data), 4)))
+        if len(to_drop_rows) > 0:
+            to_drop_rows = rows_null_percent[rows_null_percent > self.max_row_null_pct]
+            to_drop_rows = to_drop_rows.to_dict()
+            self.to_drop_rows = sorted(to_drop_rows.items(), key=operator.itemgetter(1), reverse=True)
+            self.log.info("缺失值比例>{}的有{}行".format(self.max_row_null_pct, len(to_drop_rows)))
+            data = data[data.index.isin(list(to_drop_rows.keys()))]
+            self.log.info("全局label1的占比为:{}".format(round(self.df.y.value_counts()[1]/len(self.df),4)))
+            self.log.info("特征饱和度低于{}的样本label1的占比为:{}".format(self.max_row_null_pct, round(data.y.value_counts()[1] / len(data), 4)))
+        else:
+            self.log.info("哇哦～没有样本有缺失数据")
         self.log.info("*"*50)
+
         # 对列的探索
         data = self.df.copy()
         cols_null_percent = data.isnull().sum() / data.shape[0]
         to_drop_cols = cols_null_percent[cols_null_percent > self.max_col_null_pct]
-        to_drop_cols = dict(to_drop_cols)
-        self.to_drop_cols = sorted(to_drop_cols.items(), key=operator.itemgetter(1), reverse=True)
+        if len(to_drop_cols) > 0:
+            to_drop_cols = dict(to_drop_cols)
+            self.to_drop_cols = sorted(to_drop_cols.items(), key=operator.itemgetter(1), reverse=True)
 
-        self.log.info("缺失值比例>{}的有{}个变量".format(self.max_col_null_pct, len(to_drop_cols)))
-        result = {
-            'dtype': data.dtypes,
-            'data_cnt': data.shape[0],
-            'null_cnt': data.isnull().sum(),
-            'null_ratio': data.isnull().sum() / data.shape[0]
-        }
-        result = pd.DataFrame(result, columns=['dtype', 'data_cnt', 'null_cnt', 'null_ratio'])
-        result = result[result.null_ratio > self.max_col_null_pct]
-        result = result.sort_values(by=['null_ratio'], ascending=False)
-        self.log.info("每列缺失值情况如下:\n{}".format((self.format_dataframe(result))))
+            self.log.info("缺失值比例>{}的有{}个变量".format(self.max_col_null_pct, len(to_drop_cols)))
+            result = {
+                'dtype': data.dtypes,
+                'data_cnt': data.shape[0],
+                'null_cnt': data.isnull().sum(),
+                'null_ratio': data.isnull().sum() / data.shape[0]
+            }
+            result = pd.DataFrame(result, columns=['dtype', 'data_cnt', 'null_cnt', 'null_ratio'])
+            result = result[result.null_ratio > self.max_col_null_pct]
+            result = result.sort_values(by=['null_ratio'], ascending=False)
+            self.log.info("每列缺失值情况如下:\n{}".format((self.format_dataframe(result))))
+        else:
+            self.log.info("哇哦～特征全覆盖")
         self.log.info("*"*50)
         del data
-        del result
         del cols_null_percent
         del rows_null_percent
 
