@@ -57,9 +57,9 @@ class EdaUtil(object):
 
         if len(self.serial_col)>0:
             tmp_serical = pd.DataFrame(df[self.serial_col], dtype=float)
-            self.df = pd.concat([df[list(set(self.dist_col + [target_name]))], tmp_serical], axis=1)
+            self.df = pd.concat([df[list(set(self.del_col + self.dist_col + [target_name]))], tmp_serical], axis=1)
         else:
-            self.df = df[list(set(self.dist_col + [target_name]))]
+            self.df = df[list(set(self.del_col + self.dist_col + [target_name]))]
         self.df.rename(columns={target_name: "y"}, inplace=True)
 
         self.max_col_null_pct = max_col_null_pct

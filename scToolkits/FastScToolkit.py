@@ -160,12 +160,15 @@ class FastScWoe(object):
 
         self.df_train_woe = sc.woebin_ply(self.df_train, self.bins_adj)
         self.df_train_woe.columns = [i.replace("_woe", "") for i in self.df_train_woe.columns]
+        self.df_train_woe.to_csv("train_woe.csv", index=False, sep="|")
         if self.df_test.any().any():
             self.df_test_woe = sc.woebin_ply(self.df_test, self.bins_adj)
             self.df_test_woe.columns = [i.replace("_woe", "") for i in self.df_test_woe.columns]
+            self.df_test_woe.to_csv("test_woe.csv", index=False, sep="|")
         if self.df_ott.any().any():
             self.df_ott_woe = sc.woebin_ply(self.df_ott, self.bins_adj)
             self.df_ott_woe.columns = [i.replace("_woe", "") for i in self.df_ott_woe.columns]
+            self.df_ott_woe.to_csv("ott_woe.csv", index=False, sep="|")
         self.log.info("CutBin has finished!")
 
     def _check_row_na(self, data):
