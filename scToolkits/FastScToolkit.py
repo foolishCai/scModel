@@ -248,7 +248,7 @@ class FastScWoe(object):
         rs["score_max"] = rs.pred_min.map(lambda x: a - b * np.log(x / (1 - x)) if x>0 else float("-inf"))
         rs["score_min"] = rs.pred_max.map(lambda x: a - b * np.log(x / (1 - x)) if (1-x)>0 else float("inf"))
 
-        rs["score_bin"] = rs.apply(lambda x: "(" + str(round(x.score_max, 2)) + "," + str(round(x.score_min, 2)) + "]",
+        rs["score_bin"] = rs.apply(lambda x: "(" + str(round(x.score_min, 2)) + "," + str(round(x.score_max, 2)) + "]",
                                    axis=1)
 
         rs = rs.sort_values(by="pred_bin", ascending=False)
