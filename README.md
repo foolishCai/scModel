@@ -134,6 +134,18 @@ fsw.cut_main()
 fsw.model_main()
 ```
 
+
+```python
+# 得到sql映射SQL
+fsw.card2sql(table_name="<table_name>", id_col="id")
+```
+
+```python
+# 得到档位的SQl
+fsw.level2sql(table_name="<table_name>")
+```
+
+
 ### step4: 其他指标
 
 #### note4.1 按需采用

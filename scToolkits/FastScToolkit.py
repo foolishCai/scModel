@@ -22,7 +22,7 @@ from sklearn.linear_model import LogisticRegression
 
 class FastScWoe(object):
     def __init__(self, df_train, target_name, dist_col, serial_col, df_test=None, df_ott=None, filename=None,
-                 max_bins=5, method="tree", max_corr=0.75, max_vif=10, cut_nums=50, base_score=500, double_score=20):
+                 max_bins=5, method="tree", max_corr=0.75, max_vif=10, cut_nums=10, base_score=500, double_score=20):
         '''
         :param df_train:  训练集
         :param target_name:  y
@@ -377,3 +377,56 @@ class FastScWoe(object):
         writer.close()
 
         self.log.info("全部环节结束，请查看相关文件！")
+
+    def card2sql(self, table_name, id_col="id"):
+        bin_df = pd.read_excel("{}_report.xlsx".format(self.filename), sheet_name="card_result", dtype=str,
+                               na_values=[np.nan, "", "\\N"])
+        base_point = bin_df[bin_df.variable == "basepoints"].points[0]
+        bin_df = bin_df[bin_df.variable != "basepoints"]
+        bin_df.replace(np.nan, "missing", inplace=True)
+
+        fea_serial = [i for i in self.final_features if i in self.serial_col]
+        fea_dist = [i for i in self.final_features if i in self.dist_col]
+        self.log.info("映射分数，共有{}个特征，其中连续特征{}个，离散特征{}个。".format(len(self.final_features), len(fea_serial), len(fea_dist)))
+
+        sql1 = "select id \n"
+        sqls = list(bin_df.variable.unique())
+        for s in sqls:
+            tmp = bin_df[bin_df.variable == s]
+            if s in fea_dist:
+                tmp["sql_str"] = tmp.apply(
+                    lambda x: "when {}='{}' then {}".format(x["variable"], x["bin"], x["points"]) if x[
+                                                                                                         "bin"] != "missing"
+                    else "when {} ='' or {} is null then {}".format(x["variable"], x["variable"], x["points"]), axis=1)
+                tmp_sql = ",(case " + " ".join(tmp.sql_str.tolist()) + " else null end) as {}".format(s)
+            else:
+                tmp["min_value"] = tmp["bin"].map(
+                    lambda x: (x.split(",")[0]).replace("[", "") if x.find(",") > -1 else np.nan)
+                tmp["max_value"] = tmp["bin"].map(
+                    lambda x: (x.split(",")[1]).replace(")", "") if x.find(",") > -1 else np.nan)
+                tmp["sql_str"] = tmp.apply(
+                    lambda x: "when float({})>={} and float({})<{} then {}".format(x["variable"], x["min_value"],
+                                                                                   x["variable"], x["max_value"],
+                                                                                   x["points"]) if x["bin"] != "missing"
+                    else "when float({}) is null then {}".format(x["variable"], x["points"]), axis=1)
+                tmp_sql = ",(case " + " ".join(tmp.sql_str.tolist()) + " else null end) as {}".format(s)
+                tmp_sql = tmp_sql.replace("float({})>=-inf and ".format(s), "").replace("and float({})<inf".format(s),
+                                                                                        "")
+            sql1 = sql1 + tmp_sql + "\n"
+        sql1 = sql1 + "from {table_name}".format(table_name=table_name)
+
+        all_scores =" + ".join(sqls)
+        sql = "select *, ({base_point} + {all_scores}) as score \n from ({sql1})t".format(base_point=base_point, all_scores=all_scores, sql1=sql1)
+        print(">>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>> card2SQL 生成如下：\n", sql)
+
+    def level2sql(self, table_name):
+        bin_df = pd.read_excel("{}_report.xlsx".format(self.filename), sheet_name="test_result", dtype=str)
+        bin_df = bin_df[~bin_df.score_bin.isnull()]
+        bin_df["score_min"] = bin_df.score_bin.map(lambda x: x.split(",")[0].replace("(", ""))
+        bin_df["score_max"] = bin_df.score_bin.map(lambda x: x.split(",")[1].replace("]", ""))
+        bin_df["idx"] = [i for i in range(len(bin_df))]
+        bin_df["sql_str"] = bin_df.apply(
+            lambda x: "when score>{} and score<={} then {} ".format(x["score_min"], x["score_max"], x["idx"]), axis=1)
+        sql = "select (case " + "\n".join(bin_df.sql_str.tolist()) + "end) as score_level \nfrom {table_name}".format(
+            table_name=table_name)
+        print(">>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>> l2vel2SQL 生成如下：\n", sql)
